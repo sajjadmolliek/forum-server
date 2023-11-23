@@ -49,7 +49,7 @@ async function run() {
   try {
     // <--------------------- Collection in database -------------->
 
-    // const usersData = client.db("bistroDb").collection("usersInfo");
+    const usersData = client.db("ForumDb").collection("usersInfo");
     // const menusData = client.db("bistroDb").collection("menuItems");
     // const cartData = client.db("bistroDb").collection("carts");
     // const ratingData = client.db("bistroDb").collection("ratings");
@@ -82,6 +82,23 @@ async function run() {
     app.post("/logout", async (req, res) => {
       res.clearCookie("token", { maxAge: 0 }).send({ Cookie: "clear" });
     });
+    //<------------------User Info Database----------------->
+    app.post("/users", async (req, res) => {
+      const cartItems = req.body;
+      const query = { email: cartItems.email };
+      const exeistUser = await usersData.findOne(query);
+
+      if (exeistUser) {
+        return res.send({
+          massage: "User Already Exist",
+          acknowledged: true,
+          insertedId: null,
+        });
+      }
+      const result = await usersData.insertOne(cartItems);
+      res.send(result);
+    });
+
 
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
