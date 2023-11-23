@@ -16,12 +16,11 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 const verifyToken = (req, res, next) => {
-  // console.log(req.cookies.token);
   const token = req.cookies?.token;
   if (!token) {
     return res.status(401).send([{ Massage: "UnAuthorize" }]);
   }
-  // console.log({token});
+
   jwt.verify(token, process.env.SECRET, (err, decoded) => {
     if (err) {
       return res.status(401).send([{ Massage: "UnAuthorize" }]);
@@ -35,7 +34,7 @@ const verifyToken = (req, res, next) => {
 //  <-------------------------------MongoDB Server --------------------------->
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const uri = `mongodb+srv://${process.env.userNameBistro}:${process.env.userPassBistro}@cluster0.rsgizg7.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://${process.env.DB_U_NAME}:${process.env.DB_PASS}@cluster0.rsgizg7.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -48,13 +47,12 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
     // <--------------------- Collection in database -------------->
 
-    const usersData = client.db("bistroDb").collection("usersInfo");
-    const menusData = client.db("bistroDb").collection("menuItems");
-    const cartData = client.db("bistroDb").collection("carts");
-    const ratingData = client.db("bistroDb").collection("ratings");
+    // const usersData = client.db("bistroDb").collection("usersInfo");
+    // const menusData = client.db("bistroDb").collection("menuItems");
+    // const cartData = client.db("bistroDb").collection("carts");
+    // const ratingData = client.db("bistroDb").collection("ratings");
 
     //<------------------Verify Admin----------------->
 
@@ -84,8 +82,6 @@ async function run() {
     app.post("/logout", async (req, res) => {
       res.clearCookie("token", { maxAge: 0 }).send({ Cookie: "clear" });
     });
-
-   
 
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
