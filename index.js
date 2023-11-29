@@ -1,15 +1,19 @@
+// const { ObjectId } = require('mongodb');
 const express = require("express");
 require("dotenv").config();
+// const { ObjectId } = require('mongodb');
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 5007;
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 //  <----------Middle ware --------->
 app.use(
   cors({
     origin: ["http://localhost:5173"],
+
     credentials: true,
   })
 );
@@ -32,9 +36,11 @@ const verifyToken = (req, res, next) => {
 };
 
 //  <-------------------------------MongoDB Server --------------------------->
-
+const DB_U_NAME = "coffeeMaster";
+const DB_PASS = "JzzjpTBw0cvCe0h4";
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const uri = `mongodb+srv://${process.env.DB_U_NAME}:${process.env.DB_PASS}@cluster0.rsgizg7.mongodb.net/?retryWrites=true&w=majority`;
+// const uri = `mongodb+srv://${process.env.DB_U_NAME}:${process.env.DB_PASS}@cluster0.rsgizg7.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb://${DB_U_NAME}:${DB_PASS}@ac-ro4l4wb-shard-00-00.rsgizg7.mongodb.net:27017,ac-ro4l4wb-shard-00-01.rsgizg7.mongodb.net:27017,ac-ro4l4wb-shard-00-02.rsgizg7.mongodb.net:27017/?ssl=true&replicaSet=atlas-viyzo8-shard-0&authSource=admin&retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -50,9 +56,11 @@ async function run() {
     // <--------------------- Collection in database -------------->
 
     const usersData = client.db("ForumDb").collection("usersInfo");
-    // const menusData = client.db("bistroDb").collection("menuItems");
-    // const cartData = client.db("bistroDb").collection("carts");
-    // const ratingData = client.db("bistroDb").collection("ratings");
+    const AboutUserData = client.db("ForumDb").collection("aboutUser");
+    const postsData = client.db("ForumDb").collection("postsInfo");
+    const commentsData = client.db("ForumDb").collection("comments");
+    const announcementsData = client.db("ForumDb").collection("announcements");
+    const TagsData = client.db("ForumDb").collection("Tags");
 
     //<------------------Verify Admin----------------->
 
@@ -60,8 +68,12 @@ async function run() {
       const email = req.user.sendingUser;
       const query = { email: email };
       const AdminCK = await usersData.findOne(query);
-      if (AdminCK?.role !== "Admin") {
-        res.status(403).send({ message: "Forbidden Access" });
+      try {
+        if (AdminCK?.role !== "Admin") {
+          res.status(403).send({ message: "Forbidden Access" });
+        }
+      } catch {
+        console.log("sorry");
       }
       next();
     };
@@ -82,7 +94,265 @@ async function run() {
     app.post("/logout", async (req, res) => {
       res.clearCookie("token", { maxAge: 0 }).send({ Cookie: "clear" });
     });
+    //<------------------Payments Info Database----------------->
+
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+
+      // console.log(paymentIntent.client_secret)
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+    //<------------------AboutUser Info Database----------------->
+
+    app.patch("/aboutUser", verifyToken, async (req, res) => {
+      const aboutUser = req.body;
+      const filter = { email: aboutUser.email };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          name: aboutUser.name,
+          email: aboutUser.email,
+          aboutEmail: aboutUser.aboutEmail,
+          phone: aboutUser.phone,
+          address: aboutUser.address,
+        },
+      };
+      const result = await AboutUserData.updateOne(filter, updateDoc, options);
+      res.send(result);
+    });
+    app.get("/aboutUser", verifyToken, async (req, res) => {
+      const email = req.query.email;
+      const result = await AboutUserData.findOne({ email });
+      res.send(result);
+    });
+    //<------------------Comments Posts Into Database----------------->
+
+    app.post("/comment", verifyToken, async (req, res) => {
+      const post = req.body;
+      const result = await commentsData.insertOne(post);
+      res.send(result);
+    });
+    app.get("/comment", verifyToken, async (req, res) => {
+      const result = await commentsData.find().toArray();
+      res.send(result);
+    });
+    app.get("/comments/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { commentId: id };
+      const result = await commentsData.find(query).toArray();
+      res.send(result);
+    });
+
+    //<------------------Announcement Given Into Database----------------->
+
+    app.post("/announcement", verifyToken, async (req, res) => {
+      const announcement = req.body;
+      const result = await announcementsData.insertOne(announcement);
+      const updateHoiche = await usersData.updateMany(
+        {},
+        { $inc: { notifications: 1 } }
+      );
+      res.send(result);
+    });
+    app.get("/announcement", verifyToken, async (req, res) => {
+      const result = await announcementsData.find().toArray();
+      res.send(result);
+    });
+    //<------------------Tags Given Into Database----------------->
+
+    app.post("/tags", verifyToken, async (req, res) => {
+      const tags = req.body;
+      const result = await TagsData.insertOne(tags);
+      res.send(result);
+    });
+    app.get("/tags", verifyToken, async (req, res) => {
+      const result = await TagsData.find().toArray();
+      res.send(result);
+    });
+
+    //<------------------ Posts_data Info Database----------------->
+
+    app.post("/posts", verifyToken, async (req, res) => {
+      const post = req.body;
+      post.postedTime = new Date();
+      const result = await postsData.insertOne(post);
+      res.send(result);
+    });
+    app.get('/sort/upvote',async (req,res) => {
+      const result = await postsData.aggregate([
+        {
+          $addFields:{
+            downVote:{
+              $subtract:[
+               '$upVote','$downVote'
+              ]
+            }
+          }
+        },
+        {
+          $sort: {downVote: -1}
+        }
+      ]).toArray()
+      res.send(result)
+      console.log(result)
+    })
+    app.get('/sort/downvote',async (req,res) => {
+      const result = await postsData.aggregate([
+        {
+          $addFields:{
+            downVote:{
+              $subtract:[
+               '$upVote','$downVote'
+              ]
+            }
+          }
+        },
+        {
+          $sort: {downVote: 1}
+        }
+      ]).toArray()
+      res.send(result)
+      console.log(result)
+    })
+    app.get("/posts/allPost", async (req, res) => {
+      // console.log("1")
+      const search = req.query.search;
+      const regex = new RegExp(search, "i");
+      const query = { tag: regex };
+      if (search === "all") {
+        const result = await postsData
+          .find()
+          .sort({ postedTime: -1 })
+          .toArray();
+        res.send(result);
+      } else {
+        const result = await postsData
+          .find(query)
+          .sort({ postedTime: -1 })
+          .toArray();
+        res.send(result);
+        
+      }
+    });
+    app.get("/details/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await postsData.findOne(query);
+      res.send(result);
+    });
+    app.patch("/details/:id", async (req, res) => {
+      // console.log("2")
+      const id = req.params.id;
+      const email = req.query.email;
+      const filter = { _id: new ObjectId(id) };
+      const upVote = req.body.upVote;
+      const query = { likesId: email };
+      const result = await postsData?.findOne(filter);
+      const get = result.likesId?.find((re) => re === email);
+
+      if (get === undefined) {
+        const filter = { _id: new ObjectId(id) };
+        const options = { upsert: true };
+        const updateDoc = {
+          $set: {
+            upVote: upVote + 1,
+            likesId: [email],
+          },
+        };
+        const result = await postsData.updateOne(filter, updateDoc, options);
+        res.send(result);
+      } else {
+        res.send("Sorry");
+      }
+    });
+    app.patch("/disLike/:id", async (req, res) => {
+      // console.log("2")
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const downVote = req.body.downVote;
+      const email = req.body.email;
+
+      const query = { disLikesId: email };
+      const result = await postsData?.findOne(filter);
+      const getDisLike = result.disLikesId?.find((re) => re === email);
+      const getLike = result.likesId?.find((re) => re === email);
+      
+      if (getLike) {
+        const result = await postsData?.deleteOne(filter);
+      }
+
+      // if (getDisLike === undefined) {
+      //   const filter = { _id: new ObjectId(id) };
+      //   const options = { upsert: true };
+      //   const updateDoc = {
+      //     $set: {
+      //       downVote: downVote + 1,
+      //       disLikesId: [email],
+      //     },
+      //   };
+      //   const result = await postsData.updateOne(filter, updateDoc, options);
+      //   res.send(result);
+      // } else {
+      //   res.send("Sorry");
+      // }
+    });
+    app.get("/posts/timeline", verifyToken, async (req, res) => {
+      // console.log("3")
+      const email = req.query.email;
+      const query = { email: email };
+
+      const result = await postsData
+        .find(query)
+        .sort({ postedTime: -1 })
+        .toArray();
+      res.send(result);
+    });
+    app.get("/posts/myPosts", verifyToken, async (req, res) => {
+      // console.log("4")
+      const email = req.query.email;
+      const query = { email: email };
+      const result = await postsData.find(query).toArray();
+      res.send(result);
+    });
+    app.get("/posts/limit", verifyToken, async (req, res) => {
+      // console.log("5")
+      const email = req.query.email;
+      const query = { email: email };
+      const exeistUser = await usersData.findOne(query);
+
+      if (exeistUser?.membership !== "bronze") {
+        const premiumUser = true;
+        res.send({ premiumUser });
+      } else {
+        const result = await postsData.countDocuments(query);
+
+        if (result < 5) {
+          const premiumUser = true;
+          res.send({ premiumUser });
+        } else {
+          const premiumUser = false;
+          res.send({ premiumUser });
+        }
+      }
+    });
+    app.delete("/deletePost/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await postsData.deleteOne(query);
+      console.log(result);
+      res.send(result);
+    });
+
     //<------------------User Info Database----------------->
+
     app.post("/users", async (req, res) => {
       const cartItems = req.body;
       const query = { email: cartItems.email };
@@ -98,7 +368,107 @@ async function run() {
       const result = await usersData.insertOne(cartItems);
       res.send(result);
     });
+    app.get("/notification", async (req, res) => {
+      const email = req.query.email;
+      query = { email: email };
+      const result = await usersData.findOne({ email });
+      res.send(result);
+    });
+    app.patch("/patchNotification", async (req, res) => {
+      const email = req.query.email;
+      filter = { email: email };
+      const result = await usersData.findOne({ email });
 
+      if (result) {
+        const options = { upsert: true };
+        const updateDoc = {
+          $set: {
+            notifications: 0,
+          },
+        };
+
+        const result = await usersData.updateOne(filter, updateDoc, options);
+        res.send(result);
+      }
+    });
+    app.get("/users/admin", verifyToken, async (req, res) => {
+      console.log("6");
+      const email = req.query.email;
+      const result = await usersData.findOne({ email });
+      // console.log(result)
+      if (result) {
+        res.send(result);
+      } else {
+        res
+          .status(404)
+          .send({ message: "User not found for the provided email." });
+      }
+    });
+    app.get("/users/manage", verifyToken, async (req, res) => {
+      console.log("7");
+      const searchQuery = req.query.uName;
+      const regex = new RegExp(searchQuery, "i");
+      if (searchQuery === "all") {
+        const result = await usersData.find().toArray();
+        res.send(result);
+      } else {
+        const result = await usersData.find({ name: regex }).toArray();
+        res.send(result);
+      }
+    });
+    app.get("/users/admin/:email", verifyToken, async (req, res) => {
+      // console.log("8")
+      const email = req.params.email;
+      if (email === req.user.sendingUser) {
+        const query = { email: email };
+        const result = await usersData.findOne(query);
+        let admin = false;
+
+        if (result.role === "Admin") {
+          admin = true;
+
+          res.send({ admin });
+        }
+      } else {
+        res.status(403).send([{ Massage: "Forbidden Access", status: 403 }]);
+      }
+    });
+    app.patch(
+      "/users/admin/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const options = { upsert: true };
+        const updateDoc = {
+          $set: {
+            role: "Admin",
+          },
+        };
+        const result = await usersData.updateOne(filter, updateDoc, options);
+        res.send(result);
+      }
+    );
+    app.patch("/users/membership/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          membership: "gold",
+        },
+      };
+
+      const result = await usersData.updateOne(filter, updateDoc, options);
+      res.send(result);
+    });
+    app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await usersData.deleteOne(query);
+      res.send(result);
+    });
 
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
@@ -109,9 +479,9 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("I am The API for Bistro Boss Restaurant!");
+  res.send("ChiChat is Chatting!");
 });
 
 app.listen(port, () => {
-  console.log(`Bistro Boss sitting on port ${port}`);
+  console.log(`ChiChat is Chatting on port ${port}`);
 });
