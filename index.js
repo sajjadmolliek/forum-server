@@ -12,7 +12,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 //  <----------Middle ware --------->
 app.use(
   cors({
-    origin: ["http://localhost:5173","http://localhost:5174", "https://forum-b8cea.firebaseapp.com"],
+    origin: ["http://localhost:5173", "https://forum-b8cea.firebaseapp.com"],
 
     credentials: true,
   })
@@ -59,6 +59,7 @@ async function run() {
     const commentsData = client.db("ForumDb").collection("comments");
     const announcementsData = client.db("ForumDb").collection("announcements");
     const TagsData = client.db("ForumDb").collection("Tags");
+    const ReportsData = client.db("ForumDb").collection("Reports");
 
     //<------------------Verify Admin----------------->
 
@@ -160,6 +161,17 @@ async function run() {
     });
     app.get("/announcement", verifyToken, async (req, res) => {
       const result = await announcementsData.find().toArray();
+      res.send(result);
+    });
+    //<------------------Announcement Given Into Database----------------->
+
+    app.post("/report", verifyToken, async (req, res) => {
+      const report = req.body;
+      const result = await ReportsData.insertOne(report);
+      res.send(result);
+    });
+    app.get("/reports", verifyToken, async (req, res) => {
+      const result = await ReportsData.find().toArray();
       res.send(result);
     });
     //<------------------Tags Given Into Database----------------->
