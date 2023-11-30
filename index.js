@@ -1,10 +1,10 @@
-// const { ObjectId } = require('mongodb');
 const express = require("express");
 require("dotenv").config();
-// const { ObjectId } = require('mongodb');
+const cors = require("cors");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
-const cors = require("cors");
+
 const app = express();
 const port = process.env.PORT || 5007;
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
@@ -12,11 +12,16 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 //  <----------Middle ware --------->
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://forum-b8cea.firebaseapp.com"],
+    origin: [
+      "https://forum-b8cea.firebaseapp.com",
+      "https://forum-b8cea.web.app",
+      "http://localhost:5173",
+    ],
 
     credentials: true,
   })
 );
+
 app.use(cookieParser());
 app.use(express.json());
 const verifyToken = (req, res, next) => {
@@ -37,7 +42,6 @@ const verifyToken = (req, res, next) => {
 
 //  <-------------------------------MongoDB Server --------------------------->
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_U_NAME}:${process.env.DB_PASS}@cluster0.rsgizg7.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -84,9 +88,14 @@ async function run() {
       res
         .cookie("token", token, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === "production" ? true : false,
+          secure: process.env.NODE_ENV === "production",
           sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
         })
+        // .cookie("token", token, {
+        //   httpOnly: true,
+        //   // secure: process.env.NODE_ENV === "production" ? true : false,
+        //   // sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+        // })
         .send({ Success: "Cookies Set Successfully" });
     });
 
@@ -176,12 +185,12 @@ async function run() {
     });
     //<------------------Tags Given Into Database----------------->
 
-    app.post("/tags", verifyToken, async (req, res) => {
+    app.post("/tags", async (req, res) => {
       const tags = req.body;
       const result = await TagsData.insertOne(tags);
       res.send(result);
     });
-    app.get("/tags", verifyToken, async (req, res) => {
+    app.get("/tags", async (req, res) => {
       const result = await TagsData.find().toArray();
       res.send(result);
     });
@@ -194,9 +203,13 @@ async function run() {
       const result = await postsData.insertOne(post);
       res.send(result);
     });
+    app.get("/totalPosts", verifyToken, async (req, res) => {
+      const result = await postsData.find().toArray();
+      res.send(result);
+    });
     app.get("/sort/upvote", async (req, res) => {
-      const page = req.query.page -1;
-      const skip = 3*page;
+      const page = req.query.page - 1;
+      const skip = 10 * page;
       const result = await postsData
         .aggregate([
           {
@@ -209,13 +222,15 @@ async function run() {
           {
             $sort: { downVote: -1 },
           },
-        ]).skip(skip).limit(3)
+        ])
+        .skip(skip)
+        .limit(10)
         .toArray();
       res.send(result);
     });
     app.get("/sort/downvote", async (req, res) => {
-      const page = req.query.page -1;
-      const skip = 3*page;
+      const page = req.query.page - 1;
+      const skip = 10 * page;
 
       const result = await postsData
         .aggregate([
@@ -229,31 +244,37 @@ async function run() {
           {
             $sort: { downVote: 1 },
           },
-        ]).skip(skip).limit(3)
+        ])
+        .skip(skip)
+        .limit(10)
         .toArray();
       res.send(result);
     });
     app.get("/posts/allPost", async (req, res) => {
       const search = req.query.search;
-      const page = req.query.page -1;
-      const skip = 3*page;
+      const page = req.query.page - 1;
+      const skip = 10 * page;
       const regex = new RegExp(search, "i");
       const query = { tag: regex };
       if (search === "all") {
-        const result = await postsData
-          .find().skip(skip).limit(3)
-          .sort({ postedTime: -1 })
-          .toArray();
 
-          const dataLength = await postsData.estimatedDocumentCount()
-        res.send({result,dataLength});
-      } else {
         const result = await postsData
-          .find(query).skip(skip).limit(3)
+          .find()
+          .skip(skip)
+          .limit(10)
           .sort({ postedTime: -1 })
           .toArray();
-          const dataLength = await postsData.estimatedDocumentCount()
-        res.send({result,dataLength});
+          const dataLength = await postsData.estimatedDocumentCount();
+          res.send({ result, dataLength });
+        } else {
+          const result = await postsData
+          .find(query)
+          .skip(skip)
+          .limit(10)
+          .sort({ postedTime: -1 })
+          .toArray();
+        const dataLength = await postsData.estimatedDocumentCount();
+        res.send({ result, dataLength });
       }
     });
     app.get("/details/:id", async (req, res) => {
@@ -463,6 +484,18 @@ async function run() {
         },
       };
 
+      const result = await usersData.updateOne(filter, updateDoc, options);
+      res.send(result);
+    });
+    app.patch("/membershipCancel/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          membership: "bronze",
+        },
+      };
       const result = await usersData.updateOne(filter, updateDoc, options);
       res.send(result);
     });
