@@ -12,7 +12,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 //  <----------Middle ware --------->
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173","http://localhost:5174", "https://forum-b8cea.firebaseapp.com"],
 
     credentials: true,
   })
@@ -36,11 +36,9 @@ const verifyToken = (req, res, next) => {
 };
 
 //  <-------------------------------MongoDB Server --------------------------->
-const DB_U_NAME = "coffeeMaster";
-const DB_PASS = "JzzjpTBw0cvCe0h4";
+
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-// const uri = `mongodb+srv://${process.env.DB_U_NAME}:${process.env.DB_PASS}@cluster0.rsgizg7.mongodb.net/?retryWrites=true&w=majority`;
-const uri = `mongodb://${DB_U_NAME}:${DB_PASS}@ac-ro4l4wb-shard-00-00.rsgizg7.mongodb.net:27017,ac-ro4l4wb-shard-00-01.rsgizg7.mongodb.net:27017,ac-ro4l4wb-shard-00-02.rsgizg7.mongodb.net:27017/?ssl=true&replicaSet=atlas-viyzo8-shard-0&authSource=admin&retryWrites=true&w=majority`;
+const uri = `mongodb+srv://${process.env.DB_U_NAME}:${process.env.DB_PASS}@cluster0.rsgizg7.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -104,8 +102,6 @@ async function run() {
         currency: "usd",
         payment_method_types: ["card"],
       });
-
-      // console.log(paymentIntent.client_secret)
       res.send({
         clientSecret: paymentIntent.client_secret,
       });
@@ -186,60 +182,66 @@ async function run() {
       const result = await postsData.insertOne(post);
       res.send(result);
     });
-    app.get('/sort/upvote',async (req,res) => {
-      const result = await postsData.aggregate([
-        {
-          $addFields:{
-            downVote:{
-              $subtract:[
-               '$upVote','$downVote'
-              ]
-            }
-          }
-        },
-        {
-          $sort: {downVote: -1}
-        }
-      ]).toArray()
-      res.send(result)
-      console.log(result)
-    })
-    app.get('/sort/downvote',async (req,res) => {
-      const result = await postsData.aggregate([
-        {
-          $addFields:{
-            downVote:{
-              $subtract:[
-               '$upVote','$downVote'
-              ]
-            }
-          }
-        },
-        {
-          $sort: {downVote: 1}
-        }
-      ]).toArray()
-      res.send(result)
-      console.log(result)
-    })
+    app.get("/sort/upvote", async (req, res) => {
+      const page = req.query.page -1;
+      const skip = 3*page;
+      const result = await postsData
+        .aggregate([
+          {
+            $addFields: {
+              downVote: {
+                $subtract: ["$upVote", "$downVote"],
+              },
+            },
+          },
+          {
+            $sort: { downVote: -1 },
+          },
+        ]).skip(skip).limit(3)
+        .toArray();
+      res.send(result);
+    });
+    app.get("/sort/downvote", async (req, res) => {
+      const page = req.query.page -1;
+      const skip = 3*page;
+
+      const result = await postsData
+        .aggregate([
+          {
+            $addFields: {
+              downVote: {
+                $subtract: ["$upVote", "$downVote"],
+              },
+            },
+          },
+          {
+            $sort: { downVote: 1 },
+          },
+        ]).skip(skip).limit(3)
+        .toArray();
+      res.send(result);
+    });
     app.get("/posts/allPost", async (req, res) => {
-      // console.log("1")
       const search = req.query.search;
+      const page = req.query.page -1;
+      const skip = 3*page;
       const regex = new RegExp(search, "i");
       const query = { tag: regex };
       if (search === "all") {
         const result = await postsData
-          .find()
+          .find().skip(skip).limit(3)
           .sort({ postedTime: -1 })
           .toArray();
-        res.send(result);
+
+          const dataLength = await postsData.estimatedDocumentCount()
+        res.send({result,dataLength});
       } else {
         const result = await postsData
-          .find(query)
+          .find(query).skip(skip).limit(3)
           .sort({ postedTime: -1 })
           .toArray();
-        res.send(result);
-        
+          const dataLength = await postsData.estimatedDocumentCount()
+        res.send({result,dataLength});
       }
     });
     app.get("/details/:id", async (req, res) => {
@@ -249,7 +251,6 @@ async function run() {
       res.send(result);
     });
     app.patch("/details/:id", async (req, res) => {
-      // console.log("2")
       const id = req.params.id;
       const email = req.query.email;
       const filter = { _id: new ObjectId(id) };
@@ -274,7 +275,6 @@ async function run() {
       }
     });
     app.patch("/disLike/:id", async (req, res) => {
-      // console.log("2")
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const downVote = req.body.downVote;
@@ -284,7 +284,7 @@ async function run() {
       const result = await postsData?.findOne(filter);
       const getDisLike = result.disLikesId?.find((re) => re === email);
       const getLike = result.likesId?.find((re) => re === email);
-      
+
       if (getLike) {
         const result = await postsData?.deleteOne(filter);
       }
@@ -305,10 +305,8 @@ async function run() {
       // }
     });
     app.get("/posts/timeline", verifyToken, async (req, res) => {
-      // console.log("3")
       const email = req.query.email;
       const query = { email: email };
-
       const result = await postsData
         .find(query)
         .sort({ postedTime: -1 })
@@ -316,14 +314,12 @@ async function run() {
       res.send(result);
     });
     app.get("/posts/myPosts", verifyToken, async (req, res) => {
-      // console.log("4")
       const email = req.query.email;
       const query = { email: email };
       const result = await postsData.find(query).toArray();
       res.send(result);
     });
     app.get("/posts/limit", verifyToken, async (req, res) => {
-      // console.log("5")
       const email = req.query.email;
       const query = { email: email };
       const exeistUser = await usersData.findOne(query);
@@ -347,7 +343,6 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await postsData.deleteOne(query);
-      console.log(result);
       res.send(result);
     });
 
@@ -392,10 +387,8 @@ async function run() {
       }
     });
     app.get("/users/admin", verifyToken, async (req, res) => {
-      console.log("6");
       const email = req.query.email;
       const result = await usersData.findOne({ email });
-      // console.log(result)
       if (result) {
         res.send(result);
       } else {
@@ -405,7 +398,6 @@ async function run() {
       }
     });
     app.get("/users/manage", verifyToken, async (req, res) => {
-      console.log("7");
       const searchQuery = req.query.uName;
       const regex = new RegExp(searchQuery, "i");
       if (searchQuery === "all") {
@@ -417,7 +409,6 @@ async function run() {
       }
     });
     app.get("/users/admin/:email", verifyToken, async (req, res) => {
-      // console.log("8")
       const email = req.params.email;
       if (email === req.user.sendingUser) {
         const query = { email: email };
